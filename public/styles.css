@@ -1,0 +1,72 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #1f2c4f, #0f1527 50%, #070b16 100%);
+  color: #fff;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  text-align: center;
+  margin-top: 0;
+  opacity: 0.85;
+}
+
+.metrics-grid {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.metric {
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+}
+
+.metric h2 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.metric p {
+  margin: 16px 0 0;
+  font-size: 2.2rem;
+  font-weight: 700;
+}
+
+.yellow { background: linear-gradient(145deg, #f7b500, #df9d00); }
+.green { background: linear-gradient(145deg, #1b8d40, #146a30); }
+.red { background: linear-gradient(145deg, #e23333, #b91d1d); }
+.blue { background: linear-gradient(145deg, #297bd8, #1e58b2); }
+.orange { background: linear-gradient(145deg, #ec7d15, #c45e05); }
+.emerald { background: linear-gradient(145deg, #007e57, #036243); }
+
+.status {
+  margin-top: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.status p {
+  margin: 4px 0;
+}
