@@ -20,8 +20,11 @@ const config = {
   zendeskRetryBaseDelayMs: Number(process.env.ZENDESK_RETRY_BASE_DELAY_MS || 500),
   webhookSecret: process.env.ZENDESK_WEBHOOK_SECRET || '',
   webhookDebounceMs: Number(process.env.WEBHOOK_DEBOUNCE_MS || 1500),
-  webhookSignatureHeader: (process.env.ZENDESK_WEBHOOK_SIGNATURE_HEADER || 'x-zendesk-webhook-signature').toLowerCase(),
-  webhookTimestampHeader: (process.env.ZENDESK_WEBHOOK_TIMESTAMP_HEADER || 'x-zendesk-webhook-signature-timestamp').toLowerCase(),
+  webhookSignatureHeader: process.env.ZENDESK_WEBHOOK_SIGNATURE_HEADER || 'x-zendesk-webhook-signature',
+  webhookTimestampHeader: process.env.ZENDESK_WEBHOOK_TIMESTAMP_HEADER || 'x-zendesk-webhook-signature-timestamp',
+  refreshIntervalMs: Number(process.env.REFRESH_INTERVAL_MS || 30000),
+  slaTargetMinutes: Number(process.env.SLA_TARGET_MINUTES || 480),
+  maxTicketsForAvg: Number(process.env.MAX_TICKETS_FOR_AVG || 200),
 };
 
 const hasZendeskCreds = Boolean(config.zendeskBaseUrl && config.zendeskEmail && config.zendeskApiToken);
@@ -147,6 +150,20 @@ async function withConcurrency(items, limit, task) {
   }
 
   await Promise.all(workers);
+  const url = `${config.zendeskBaseUrl}${pathname}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: getAuthHeader(),
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Zendesk API ${response.status}: ${body}`);
+  }
+
+  return response.json();
 }
 
 async function fetchSearchCount(query) {
@@ -213,6 +230,24 @@ function publishSseEvent(type, data) {
 }
 
 async function computeMetricsFromZendesk() {
+async function buildMetrics() {
+  if (!hasZendeskCreds) {
+    return {
+      source: 'mock',
+      updatedAt: new Date().toISOString(),
+      refreshIntervalMs: config.refreshIntervalMs,
+      metrics: {
+        ticketsRecibidosHoy: 0,
+        ticketsResueltosHoy: 0,
+        ticketsPendientes: 0,
+        frtPromedio: '--',
+        tiempoResolucionPromedio: '--',
+        slaCumplimiento: '--',
+      },
+      note: 'Configura las variables de entorno de Zendesk para ver datos reales.',
+    };
+  }
+
   const startIso = formatStartOfDayUTC();
 
   const [ticketsRecibidosHoy, ticketsResueltosHoy, ticketsPendientes] = await Promise.all([
@@ -250,6 +285,30 @@ async function computeMetricsFromZendesk() {
       // No frena el tablero por un ticket individual.
     }
   });
+  await Promise.all(
+    solvedTicketIds.map(async (ticketId) => {
+      try {
+        const metric = await fetchTicketMetric(ticketId);
+
+        const frt = minutesFromCalendarMetric(metric.reply_time_in_minutes);
+        if (frt !== null) {
+          frtSum += frt;
+          frtCount += 1;
+        }
+
+        const resolution = minutesFromCalendarMetric(metric.full_resolution_time_in_minutes);
+        if (resolution !== null) {
+          resolutionSum += resolution;
+          resolutionCount += 1;
+          if (resolution <= config.slaTargetMinutes) {
+            slaOk += 1;
+          }
+        }
+      } catch (_error) {
+        // Ignora tickets individuales con problemas para no romper todo el tablero.
+      }
+    })
+  );
 
   const frtAvg = frtCount > 0 ? frtSum / frtCount : null;
   const resolutionAvg = resolutionCount > 0 ? resolutionSum / resolutionCount : null;
@@ -343,17 +402,15 @@ function timingSafeCompare(a, b) {
   return crypto.timingSafeEqual(aBuffer, bBuffer);
 }
 
-function verifyWebhookSignature(rawBodyBuffer, headers) {
+function verifyWebhookSignature(rawBody, headers) {
   if (!config.webhookSecret) {
     return true;
   }
 
   const signatureHeader = headers[config.webhookSignatureHeader] || '';
   const timestamp = headers[config.webhookTimestampHeader] || '';
-  const payloadBuffer = timestamp
-    ? Buffer.concat([Buffer.from(`${timestamp}.`, 'utf8'), rawBodyBuffer])
-    : rawBodyBuffer;
-  const digest = crypto.createHmac('sha256', config.webhookSecret).update(payloadBuffer).digest();
+  const payload = timestamp ? `${timestamp}.${rawBody}` : rawBody;
+  const digest = crypto.createHmac('sha256', config.webhookSecret).update(payload).digest();
   const expectedBase64 = digest.toString('base64');
   const expectedHex = digest.toString('hex');
 
@@ -412,27 +469,23 @@ function sendFile(res, filePath) {
 
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-
+    let body = '';
     req.on('data', (chunk) => {
-      const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      chunks.push(bufferChunk);
-      size += bufferChunk.length;
-
-      if (size > 2_000_000) {
+      body += chunk;
+      if (body.length > 2_000_000) {
         reject(new Error('Payload demasiado grande.'));
         req.destroy();
       }
     });
-
-    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('end', () => resolve(body));
     req.on('error', reject);
   });
 }
 
 const server = http.createServer(async (req, res) => {
   if (!req.url || !req.method) {
+const server = http.createServer(async (req, res) => {
+  if (!req.url) {
     res.writeHead(400);
     res.end('Bad request');
     return;
@@ -468,7 +521,6 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/zendesk/webhook') {
     try {
       const rawBody = await readRequestBody(req);
-      const rawBodyText = rawBody.toString('utf8');
       const headers = Object.fromEntries(
         Object.entries(req.headers).map(([key, value]) => [key.toLowerCase(), Array.isArray(value) ? value.join(',') : String(value || '')])
       );
@@ -480,7 +532,7 @@ const server = http.createServer(async (req, res) => {
 
       let payload = {};
       try {
-        payload = rawBodyText ? JSON.parse(rawBodyText) : {};
+        payload = rawBody ? JSON.parse(rawBody) : {};
       } catch (_error) {
         sendJson(res, 400, { message: 'JSON inválido en webhook.' });
         return;
@@ -509,6 +561,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+  if (req.url === '/api/metrics') {
+    try {
+      const data = await buildMetrics();
+      sendJson(res, 200, data);
+    } catch (error) {
+      sendJson(res, 500, {
+        message: 'No fue posible obtener métricas desde Zendesk.',
+        detail: error.message,
+      });
+    }
+    return;
+  }
+
+  if (req.url === '/' || req.url === '/index.html') {
     sendFile(res, path.join(publicDir, 'index.html'));
     return;
   }
@@ -536,6 +602,18 @@ setInterval(() => {
 }, config.refreshIntervalMs);
 
 reconcileMetrics('startup');
+
+  const normalizedPath = path.normalize(req.url).replace(/^\/+/, '');
+  const requestedPath = path.join(publicDir, normalizedPath);
+
+  if (!requestedPath.startsWith(publicDir)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
+  sendFile(res, requestedPath);
+});
 
 server.listen(port, () => {
   console.log(`Tablero MVP disponible en http://localhost:${port}`);

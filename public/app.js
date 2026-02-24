@@ -12,9 +12,8 @@ const fields = [
 
 let fallbackIntervalMs = 60000;
 let fallbackTimer = null;
-let sseRetryTimer = null;
-let activeSse = null;
 let usingSse = false;
+let intervalMs = 30000;
 
 function setMetricValue(field, value) {
   const el = document.getElementById(field);
@@ -61,29 +60,12 @@ async function pollLoop() {
   }
 }
 
-function stopPolling() {
-  if (fallbackTimer) {
-    clearTimeout(fallbackTimer);
-    fallbackTimer = null;
-  }
-}
-
-function scheduleSseRetry() {
-  if (sseRetryTimer) {
-    return;
-  }
-
-  sseRetryTimer = setTimeout(() => {
-    sseRetryTimer = null;
-    startSse();
-  }, 20000);
-}
-
 function startFallbackPolling() {
   usingSse = false;
-  stopPolling();
+  if (fallbackTimer) {
+    clearTimeout(fallbackTimer);
+  }
   pollLoop();
-  scheduleSseRetry();
 }
 
 function startSse() {
@@ -92,19 +74,13 @@ function startSse() {
     return;
   }
 
-  if (activeSse) {
-    activeSse.close();
-  }
-
   const source = new EventSource('/api/stream');
-  activeSse = source;
 
   source.addEventListener('open', () => {
     usingSse = true;
-    stopPolling();
-    if (sseRetryTimer) {
-      clearTimeout(sseRetryTimer);
-      sseRetryTimer = null;
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
     }
   });
 
@@ -119,11 +95,39 @@ function startSse() {
 
   source.addEventListener('error', () => {
     source.close();
-    if (activeSse === source) {
-      activeSse = null;
-    }
     startFallbackPolling();
   });
 }
 
 startSse();
+async function loadMetrics() {
+  try {
+    const response = await fetch('/api/metrics');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    for (const field of fields) {
+      setMetricValue(field, data.metrics[field] ?? '--');
+    }
+
+    intervalMs = Number(data.refreshIntervalMs || intervalMs);
+    const updated = new Date(data.updatedAt).toLocaleTimeString();
+    statusText.textContent = `Última actualización: ${updated} | Fuente: ${data.source}`;
+
+    if (data.note) {
+      sampleText.textContent = data.note;
+    } else if (data.sampleSize) {
+      sampleText.textContent = `Muestra para promedios: ${data.sampleSize.ticketsConsiderados} tickets resueltos hoy.`;
+    } else {
+      sampleText.textContent = '';
+    }
+  } catch (error) {
+    statusText.textContent = `Error al cargar métricas: ${error.message}`;
+  } finally {
+    setTimeout(loadMetrics, intervalMs);
+  }
+}
+
+loadMetrics();
