@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tablero Mesa de Ayuda - MVP</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Mesa de Ayuda - MVP Zendesk</h1>
+      <p class="subtitle">Métricas clave en tiempo casi real (auto-refresh).</p>
+
+      <section class="metrics-grid" id="metricsGrid">
+        <article class="metric yellow">
+          <h2>Tickets Recibidos Hoy</h2>
+          <p id="ticketsRecibidosHoy">--</p>
+        </article>
+
+        <article class="metric green">
+          <h2>Tickets Resueltos Hoy</h2>
+          <p id="ticketsResueltosHoy">--</p>
+        </article>
+
+        <article class="metric red">
+          <h2>Tickets Pendientes</h2>
+          <p id="ticketsPendientes">--</p>
+        </article>
+
+        <article class="metric blue">
+          <h2>FRT Promedio</h2>
+          <p id="frtPromedio">--</p>
+        </article>
+
+        <article class="metric orange">
+          <h2>Tiempo Resolución</h2>
+          <p id="tiempoResolucionPromedio">--</p>
+        </article>
+
+        <article class="metric emerald">
+          <h2>SLA Cumplimiento</h2>
+          <p id="slaCumplimiento">--</p>
+        </article>
+      </section>
+
+      <section class="status">
+        <p id="statusText">Cargando datos...</p>
+        <p id="sampleText"></p>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
