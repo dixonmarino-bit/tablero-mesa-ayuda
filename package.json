@@ -1,10 +1,11 @@
 {
   "name": "tablero-mesa-ayuda",
-  "version": "0.0.1",
-  "description": "Servidor minimo hola mundo para prueba con ngrok",
+  "version": "0.1.0",
+  "description": "MVP de tablero local con métricas de Zendesk en tiempo casi real",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "node --watch server.js",
     "check": "node --check server.js"
   }
 }
