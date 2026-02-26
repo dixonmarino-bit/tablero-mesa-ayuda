@@ -229,7 +229,6 @@ function publishSseEvent(type, data) {
   }
 }
 
-async function computeMetricsFromZendesk() {
 async function buildMetrics() {
   if (!hasZendeskCreds) {
     return {
@@ -483,8 +482,6 @@ function readRequestBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (!req.url || !req.method) {
-const server = http.createServer(async (req, res) => {
   if (!req.url) {
     res.writeHead(400);
     res.end('Bad request');
@@ -561,20 +558,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
-  if (req.url === '/api/metrics') {
-    try {
-      const data = await buildMetrics();
-      sendJson(res, 200, data);
-    } catch (error) {
-      sendJson(res, 500, {
-        message: 'No fue posible obtener métricas desde Zendesk.',
-        detail: error.message,
-      });
-    }
-    return;
-  }
-
-  if (req.url === '/' || req.url === '/index.html') {
     sendFile(res, path.join(publicDir, 'index.html'));
     return;
   }
@@ -602,18 +585,6 @@ setInterval(() => {
 }, config.refreshIntervalMs);
 
 reconcileMetrics('startup');
-
-  const normalizedPath = path.normalize(req.url).replace(/^\/+/, '');
-  const requestedPath = path.join(publicDir, normalizedPath);
-
-  if (!requestedPath.startsWith(publicDir)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-
-  sendFile(res, requestedPath);
-});
 
 server.listen(port, () => {
   console.log(`Tablero MVP disponible en http://localhost:${port}`);
